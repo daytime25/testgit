@@ -1,0 +1,139 @@
+# coding=gbk
+from queue import Queue
+from parsers import HtmlParser
+import urllib.request
+import urllib.error
+import re
+import time
+
+
+class Crawler:
+    reached_urls = {} # §ã§á§Ú§ã§à§Ü §Õ§à§ã§ä§Ú§Ô§ß§å§ä§í§ç §ã§ã§í§Ý§à§Ü
+    queue = Queue() # §à§é§Ö§â§Ö§Õ§î §ã§ã§í§Ý§à§Ü, §æ§à§â§Þ§Ñ§ä: (§ã§ã§í§Ý§Ü§Ñ, §ß§à§Þ§Ö§â §á§à§á§í§ä§Ü§Ú, §Ô§Ý§å§Ò§Ú§ß§Ñ)
+    subdomain_set = set() # §ß§Ñ§Û§Õ§Ö§ß§ß§í§Ö §á§à§Õ§Õ§à§Þ§Ö§ß§í
+    inner_link_counter = 0
+    outer_link_counter = 0
+    error_counter = 0
+    max_attempts = 2 # §Þ§Ñ§Ü§ã§Ú§Þ§Ñ§Ý§î§ß§à§Ö §é§Ú§ã§Ý§à §á§à§á§í§ä§à§Ü §Ù§Ñ§Ô§â§å§Ù§Ü§Ú §ã§ä§â§Ñ§ß§Ú§è§í
+    max_depth = 2 # §Þ§Ñ§Ü§ã§Ú§Þ§Ñ§Ý§î§ß§Ñ§ñ §Ô§Ý§å§Ò§Ú§ß§Ñ §à§Ò§ç§à§Õ§Ñ §ã§Ñ§Û§ä§Ñ
+    sleep_time = 0 # §Ù§Ñ§Õ§Ö§â§Ø§Ü§Ñ §Þ§Ö§Ø§Õ§å §Ù§Ñ§Ô§â§å§Ù§Ü§à§Û §ã§ä§â§Ñ§ß§Ú§è §Ó §ã§Ö§Ü§å§ß§Õ§Ñ§ç (§Õ§Ý§ñ msu.ru §ã§ä§Ñ§Ó§Ú§ä§î 1)
+
+    def __init__(self, start_url):
+        self.host = self.get_host(start_url)
+        self.reached_urls[start_url] = 0
+        self.queue.put((start_url, 0, 0))
+
+    def crawl(self):
+        while not self.queue.empty():
+            (url, attempt, depth) = self.queue.get()
+
+            print((url, attempt, depth))
+
+            if self.is_outer_url(url):
+                self.outer_link_counter += 1
+            elif self.is_subdomain_url(url):
+                self.subdomain_set.add(self.get_subdomain_name(url))
+            else:
+                self.inner_link_counter += 1
+                if depth >= self.max_depth:
+                    continue
+
+                content = self.get_page(url)
+                if not content:
+                    if attempt >= self.max_attempts:
+                        self.error_counter += 1
+                        continue
+                    else:
+                        self.queue.put((url, attempt+1, depth))
+                        continue
+
+                parser =HtmlParser(content)
+                url_list = parser.get_links()
+
+                for u in url_list:
+                    if len(u) < 1:
+                        continue
+                    u = self.make_full_link(u)
+                    if u not in self.reached_urls:
+                        self.reached_urls[u] = depth+1
+                        self.queue.put((u, 0, depth+1))
+
+        print(self.reached_urls)
+        print(self.queue.qsize())
+        print("Subdomains:", self.subdomain_set)
+        print("Inner links count:", self.inner_link_counter)
+        print("Outer links count:", self.outer_link_counter)
+        print("Unavailable pages count:", self.error_counter)
+
+    def get_page(self, url):
+        """
+        §±§â§Ú§ß§Ú§Þ§Ñ§Ö§ä url §Ñ§Õ§â§Ö§ã §ã§ä§â§Ñ§ß§Ú§è§í, §á§í§ä§Ñ§Ö§ä§ã§ñ §Ö§× §ã§Ü§Ñ§é§Ñ§ä§î
+        §±§â§Ú §å§ã§á§Ö§ç§Ö §Ó§à§Ù§Ó§â§Ñ§ë§Ñ§Ö§ä§ã§ñ §ã§à§Õ§Ö§â§Ø§Ú§Þ§à§Ö §ã§ä§â§Ñ§ß§Ú§è§í
+        §±§â§Ú §à§ê§Ú§Ò§Ü§Ö §Ó§í§Ó§à§Õ§Ú§ä§ã§ñ §Ú§ß§æ§à§â§Þ§Ñ§è§Ú§ñ §à§Ò §à§ê§Ú§Ò§Ü§Ö, §Ó§à§Ù§Ó§â§Ñ§ë§Ñ§Ö§ä§ã§ñ None
+        """
+        try:
+            time.sleep(self.sleep_time)
+            return urllib.request.urlopen(url, timeout=5).read()
+        except urllib.error.HTTPError as e:
+            print(e)
+            return None
+        except BaseException as e:
+            print(e)
+            return None
+
+    def make_full_link(self, url):
+        """
+        §ª§Ù url §ã§à§Ù§Õ§Ñ§×§ä§ã§ñ §á§à§Ý§ß§Ñ§ñ §ã§ã§í§Ý§Ü§Ñ
+        §¯§Ñ§á§â§Ú§Þ§Ö§â, '/index.html' §Ò§å§Õ§Ö§ä §á§â§Ö§à§Ò§â§Ñ§Ù§à§Ó§Ñ§ß§à §Ó 'http://spbu.ru/index.html',
+        §Ö§ã§Ý§Ú §Ó §Ü§Ñ§é§Ö§ã§ä§Ó§Ö §ã§ä§Ñ§â§ä§à§Ó§à§Û §ã§ä§â§Ñ§ß§Ú§è§í §Ò§í§Ý §å§Ü§Ñ§Ù§Ñ§ß 'http://spbu.ru/'
+        """
+
+        if url[0] == '/':
+            url = 'http://' + self.host + url
+        return url
+
+    def is_subdomain_url(self, url):
+        """
+        §±§â§à§Ó§Ö§â§ñ§Ö§ä§ã§ñ, §ã§ã§í§Ý§Ñ§Ö§ä§ã§ñ §Ý§Ú url §ß§Ñ §á§à§Õ§Õ§à§Þ§Ö§ß
+        """
+        return not self.is_outer_url(url) and \
+            not re.match(r'^(http|https|ftp)://(www\.|)' + self.host.replace('.', '\.') + r'(/.*|:.*|)$', url)
+
+    def get_subdomain_name(self, url):
+        """
+        §ª§Ù url §Ó§í§Õ§Ö§Ý§ñ§Ö§ä§ã§ñ §á§à§Õ§Õ§à§Þ§Ö§ß
+        §¯§Ñ§á§â§Ú§Þ§Ö§â, §Ú§Ù 'http://apmath.spbu.ru/123' §Ò§å§Õ§Ö§ä §Ó§í§Õ§Ö§Ý§Ö§ß§à 'apmath',
+        §Ö§ã§Ý§Ú §Ó §Ü§Ñ§é§Ö§ã§ä§Ó§Ö §ã§ä§Ñ§â§ä§à§Ó§à§Û §ã§ä§â§Ñ§ß§Ú§è§í §Ò§í§Ý §å§Ü§Ñ§Ù§Ñ§ß 'http://spbu.ru/'
+        """
+        if not self.is_subdomain_url(url):
+            return None
+
+        start = url.find('//') + 2
+        end = url.find(self.host, start) - 1
+        return url[start:end]
+
+    def is_outer_url(self, url):
+        """
+        §±§â§à§Ó§Ö§â§ñ§Ö§ä§ã§ñ, §ã§ã§í§Ý§Ñ§Ö§ä§ã§ñ §Ý§Ú url §ß§Ñ §Ó§ß§Ö§ê§ß§Ú§Û §Ñ§Õ§â§Ö§ã
+        """
+        return not re.match(r'^(http|https|ftp)://([^/]+\.|)' + self.host.replace('.', '\.') + r'(/.*|:.*|)$', url)
+
+    @staticmethod
+    def get_host(url):
+        """
+        §ª§Ù url §Ó§í§Õ§Ö§Ý§ñ§Ö§ä§ã§ñ §ç§à§ã§ä (§Ò§Ö§Ù "www")
+        §¯§Ñ§á§â§Ú§Þ§Ö§â, 'http://www.spbu.ru/' §á§â§Ö§à§Ò§â§Ñ§Ù§å§Ö§ä§ã§ñ §Ó 'spbu.ru'
+        """
+        start = url.find('//') + 2
+        end = url.find('/', start)
+        end = end if end > 0 else len(url)
+
+        url = url[start:end]
+        if url.find('www.') == 0:
+            url = url[4:]
+
+        return url
+
+
+crawler = Crawler('http://spbu.ru/')
+crawler.crawl()
