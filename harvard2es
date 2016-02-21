@@ -1,0 +1,23 @@
+#!/bin/sh
+java="/usr/lib/jvm/java-8-oracle/bin/java"
+echo '
+{
+    "path" : "'${TOOLS}'/import/",
+    "pattern" : "*.mrc",
+    "elements" : "marc/bib",
+    "concurrency" : 8,
+    "elasticsearch" : "es://localhost:9300?es.cluster.name=xbib&es.sniff=true",
+    "index" : "harvard",
+    "type" : "title",
+    "shards" : 1,
+    "replica" : 0,
+    "maxbulkactions" : 3000,
+    "maxconcurrentbulkrequests" : 10,
+    "maxtimewait" : "180s",
+    "mock" : false,
+    "client" : "bulk",
+    "direct" : true
+}
+' | ${java} \
+     -cp $(pwd)/bin:$(pwd)/lib/tools-1.0.0.Beta4-standalone.jar \
+     org.xbib.tools.Runner org.xbib.tools.feed.elasticsearch.harvard.FromMARC
