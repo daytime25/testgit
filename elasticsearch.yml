@@ -1,0 +1,31 @@
+cluster:
+   name: xbib
+index:
+   codec:
+     bloom:
+       load: false
+   merge:
+     scheduler:
+       type: concurrent
+       max_thread_count: 4
+     policy:
+       type: tiered
+       max_merged_segment: 1gb
+       segments_per_tier: 4
+       max_merge_at_once: 4
+       max_merge_at_once_explicit: 4
+indices:
+   memory:
+     index_buffer_size: 33%
+   store:
+     throttle:
+       type: none
+threadpool:
+  merge:
+    type: fixed
+    size: 4
+    queue_size: 32
+  bulk:
+    type: fixed
+    size: 8
+    queue_size: 32
